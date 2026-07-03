@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.coverage
+data/articles/
+data/ingested_urls.txt
+data/indexed_files.txt
+qdrant_storage/
+logs/
+.DS_Store

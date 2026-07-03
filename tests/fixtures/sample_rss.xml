@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Feed</title>
+    <item>
+      <title>New AI agent system improves retrieval</title>
+      <link>https://example.com/ai-agent</link>
+      <description>Artificial intelligence and LLM retrieval news.</description>
+      <pubDate>Sat, 04 Jul 2026 09:30:00 +0700</pubDate>
+    </item>
+    <item>
+      <title>Gardening tools released</title>
+      <link>https://example.com/garden</link>
+      <description>Home improvement topic.</description>
+      <pubDate>Fri, 03 Jul 2026 09:30:00 +0700</pubDate>
+    </item>
+    <item>
+      <title>Duplicate AI agent system improves retrieval</title>
+      <link>https://example.com/ai-agent</link>
+      <description>AI duplicate.</description>
+      <pubDate>Sat, 04 Jul 2026 10:30:00 +0700</pubDate>
+    </item>
+  </channel>
+</rss>
