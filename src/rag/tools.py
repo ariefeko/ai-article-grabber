@@ -13,6 +13,7 @@ from src.types import AppConfig
 
 
 def should_use_external_fallback(question: str) -> bool:
+    """Return whether a question explicitly asks for external web fallback."""
     normalized = question.lower()
 
     explicit_keywords = [
@@ -44,6 +45,7 @@ def should_use_external_fallback(question: str) -> bool:
 
 
 def _slugify(value: str) -> str:
+    """Convert text into a filesystem-friendly slug."""
     value = value.lower().strip()
     value = re.sub(r"[^a-z0-9]+", "-", value)
     value = value.strip("-")
@@ -51,10 +53,12 @@ def _slugify(value: str) -> str:
 
 
 def _escape_frontmatter(value: str) -> str:
+    """Escape text for quoted Markdown frontmatter values."""
     return value.replace('"', '\\"').replace("\n", " ").strip()
 
 
 def _parse_limit_from_query(query: str, default: int = 3, maximum: int = 5) -> int:
+    """Parse and clamp a result limit from a tool query."""
     match = re.search(r"\b(\d{1,2})\b", query)
     if not match:
         return default
@@ -64,6 +68,7 @@ def _parse_limit_from_query(query: str, default: int = 3, maximum: int = 5) -> i
 
 
 def _existing_source_urls(config: AppConfig) -> set[str]:
+    """Collect source URLs that are already saved as local Markdown files."""
     urls: set[str] = set()
 
     for file_path in list_markdown_files(config.output_dir):
@@ -79,7 +84,9 @@ def _existing_source_urls(config: AppConfig) -> set[str]:
 
 
 def search_ai_articles_tool(config: AppConfig, logger):
+    """Create a tool for answering questions from local AI articles."""
     def _run(question: str) -> str:
+        """Run local article search with explicit fallback detection."""
         use_fallback = should_use_external_fallback(question)
 
         result = ask_with_fallback(
@@ -103,7 +110,9 @@ def search_ai_articles_tool(config: AppConfig, logger):
 
 
 def list_recent_articles_tool(config: AppConfig):
+    """Create a tool for listing recently saved article metadata."""
     def _run(limit_text: str = "5") -> str:
+        """Return recent saved articles up to the requested limit."""
         try:
             limit = int(str(limit_text).strip() or "5")
         except ValueError:
@@ -138,10 +147,13 @@ def list_recent_articles_tool(config: AppConfig):
 
 
 def get_article_sources_tool(config: AppConfig, logger):
+    """Create a tool for finding source URLs for matching articles."""
     def _normalize(text: str) -> str:
+        """Normalize text for loose article-title matching."""
         return " ".join(text.lower().replace("-", " ").split())
 
     def _query_tokens(text: str) -> set[str]:
+        """Extract meaningful query tokens for source matching."""
         stopwords = {
             "berikan",
             "source",
@@ -167,6 +179,7 @@ def get_article_sources_tool(config: AppConfig, logger):
         }
 
     def _run(query: str) -> str:
+        """Return matching source URLs from metadata or retrieved documents."""
         query_norm = _normalize(query)
         tokens = _query_tokens(query)
 
@@ -216,7 +229,9 @@ def get_article_sources_tool(config: AppConfig, logger):
 
 
 def tavily_web_search_tool(config: AppConfig, logger):
+    """Create a tool for explicit Tavily web searches."""
     def _run(query: str) -> str:
+        """Return formatted Tavily search results for a query."""
         results = search_tavily(query, config, logger)
         lines = [
             f"- {result.title}: {result.url}\n  {result.content}"
@@ -232,7 +247,9 @@ def tavily_web_search_tool(config: AppConfig, logger):
 
 
 def ingest_external_sources_tool(config: AppConfig, logger):
+    """Create a tool for saving Tavily results as local Markdown sources."""
     def _run(query: str) -> str:
+        """Search Tavily and save new external results as Markdown files."""
         limit = _parse_limit_from_query(query)
         results = search_tavily(query, config, logger)
 
@@ -320,6 +337,7 @@ def ingest_external_sources_tool(config: AppConfig, logger):
 
 
 def create_agent_tools(config: AppConfig, logger) -> list:
+    """Create the full set of LangChain tools used by the agent."""
     return [
         search_ai_articles_tool(config, logger),
         list_recent_articles_tool(config),

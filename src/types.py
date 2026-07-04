@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
+from pydantic import BaseModel, Field
 
 
 @dataclass
@@ -83,3 +84,16 @@ class TavilySearchResult:
     title: str
     url: str
     content: str
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    use_fallback: bool = False
+
+
+class AskResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[str] = []
+    used_fallback: bool = False
+    fallback_type: Optional[str] = None

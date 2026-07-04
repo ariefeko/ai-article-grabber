@@ -5,14 +5,17 @@ from langchain_ollama import ChatOllama
 
 
 def get_llm_provider() -> str:
+    """Return the configured LLM provider name."""
     return os.getenv("LLM_PROVIDER", "local").strip().lower()
 
 
 def get_local_chat_llm(config: Any) -> Any:
+    """Create a local Ollama chat model from app configuration."""
     return ChatOllama(model=config.ollama_chat_model)
 
 
 def get_chat_llm(config: Any) -> Any:
+    """Create the configured chat model, falling back to local Ollama."""
     provider = get_llm_provider()
 
     if provider == "openagentic":

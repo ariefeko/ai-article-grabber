@@ -11,6 +11,7 @@ from src.types import AppConfig
 
 
 def index_markdown_articles(config: AppConfig, logger) -> int:
+    """Index newly saved Markdown articles into the vector store."""
     logger.info("Indexing Markdown articles", extra={"event": "rag.index.start"})
     all_files = list_markdown_files(config.output_dir)
     indexed_files = read_indexed_files(config.indexed_files_file)

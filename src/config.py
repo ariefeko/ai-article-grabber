@@ -7,6 +7,7 @@ from src.types import AppConfig
 
 
 def _parse_int(name: str, default: int) -> int:
+    """Parse an integer environment variable with a default value."""
     raw_value = os.getenv(name, str(default))
     try:
         return int(raw_value)
@@ -15,11 +16,13 @@ def _parse_int(name: str, default: int) -> int:
 
 
 def _optional_env(name: str) -> str | None:
+    """Return a stripped environment value or None when unset."""
     value = os.getenv(name, "").strip()
     return value or None
 
 
 def load_config() -> AppConfig:
+    """Load and validate application configuration from environment variables."""
     load_dotenv()
 
     max_articles = _parse_int("MAX_ARTICLES", 5)

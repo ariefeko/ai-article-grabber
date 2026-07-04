@@ -9,6 +9,7 @@ from src.types import CandidateArticle
 
 
 def is_ai_related_article(article: CandidateArticle, keywords: list[str]) -> bool:
+    """Check whether an article title or summary matches AI keywords."""
     haystack = f"{article.title} {article.summary}".lower()
     return any(keyword.lower() in haystack for keyword in keywords)
 
@@ -18,6 +19,7 @@ def collect_candidate_articles(
     keywords: list[str],
     logger,
 ) -> list[CandidateArticle]:
+    """Collect AI-related candidate articles from configured RSS feeds."""
     logger.info("Collecting RSS articles", extra={"event": "rss.collect.start"})
     articles: list[CandidateArticle] = []
 
@@ -78,6 +80,7 @@ def collect_candidate_articles(
 
 
 def _date_sort_key(article: CandidateArticle) -> datetime:
+    """Return a datetime key for sorting articles by publication date."""
     if not article.published_at:
         return datetime.min
     try:
@@ -90,10 +93,12 @@ def _date_sort_key(article: CandidateArticle) -> datetime:
 
 
 def sort_articles_by_newest(articles: list[CandidateArticle]) -> list[CandidateArticle]:
+    """Sort candidate articles from newest to oldest."""
     return sorted(articles, key=_date_sort_key, reverse=True)
 
 
 def remove_duplicate_articles(articles: list[CandidateArticle]) -> list[CandidateArticle]:
+    """Remove duplicate candidate articles by normalized URL."""
     seen: set[str] = set()
     unique_articles: list[CandidateArticle] = []
     for article in articles:

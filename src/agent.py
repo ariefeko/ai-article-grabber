@@ -27,6 +27,7 @@ Rules:
 
 
 def extract_agent_output(result: dict[str, Any]) -> str:
+    """Extract plain text content from a LangChain agent invocation result."""
     messages = result.get("messages", [])
     if not messages:
         return str(result)
@@ -50,10 +51,12 @@ def extract_agent_output(result: dict[str, Any]) -> str:
 
 
 def get_tool_map(tools: list[Any]) -> dict[str, Any]:
+    """Build a lookup table that maps tool names to tool instances."""
     return {tool.name: tool for tool in tools}
 
 
 def parse_limit(question: str, default: int = 5) -> int:
+    """Parse a small numeric limit from a user question."""
     match = re.search(r"\b(\d{1,2})\b", question)
     if not match:
         return default
@@ -63,6 +66,7 @@ def parse_limit(question: str, default: int = 5) -> int:
 
 
 def invoke_tool(tool: Any, value: Any) -> str:
+    """Invoke a LangChain tool with several supported payload shapes."""
     payloads = [
         value,
         str(value),
@@ -86,6 +90,7 @@ def invoke_tool(tool: Any, value: Any) -> str:
 
 
 def answer_with_local_router(question: str, tools: list[Any]) -> str:
+    """Route a question to the most suitable local tool without an LLM agent."""
     tool_map = get_tool_map(tools)
     normalized = question.lower()
 
@@ -147,6 +152,7 @@ def answer_with_local_router(question: str, tools: list[Any]) -> str:
 
 
 def execute_text_tool_call(answer: str, tools: list[Any]) -> str | None:
+    """Execute a serialized text tool call emitted by a model, if present."""
     text = answer.strip()
     marker = "<tool_call>"
 
@@ -189,6 +195,7 @@ def execute_text_tool_call(answer: str, tools: list[Any]) -> str | None:
 
 
 def main() -> None:
+    """Run the interactive command-line AI article agent."""
     config = load_config()
     logger = setup_logger(config)
     logger.info("Agent started", extra={"event": "agent.start"})

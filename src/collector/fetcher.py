@@ -4,6 +4,7 @@ from src.exceptions import AppError
 
 
 def fetch_html(url: str, timeout: int, user_agent: str, logger) -> str:
+    """Fetch HTML content from a URL using the configured request settings."""
     logger.info("Fetching article", extra={"event": "article.fetch.start", "url": url})
     try:
         response = requests.get(

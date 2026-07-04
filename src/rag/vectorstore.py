@@ -6,10 +6,12 @@ from src.types import AppConfig
 
 
 def create_embeddings(config: AppConfig):
+    """Create the Ollama embedding model used for vector indexing."""
     return OllamaEmbeddings(model=config.ollama_embedding_model)
 
 
 def get_qdrant_vectorstore(config: AppConfig, logger):
+    """Connect to Qdrant and return a LangChain vector store."""
     logger.info("Connecting to Qdrant", extra={"event": "qdrant.connect.start"})
     try:
         embeddings = create_embeddings(config)
@@ -40,6 +42,7 @@ def add_documents_to_vectorstore(
     documents: list,
     logger,
 ) -> None:
+    """Add document chunks to the configured Qdrant vector store."""
     try:
         vectorstore = get_qdrant_vectorstore(config, logger)
         vectorstore.add_documents(documents)

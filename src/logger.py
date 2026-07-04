@@ -8,6 +8,7 @@ from src.types import AppConfig
 
 class AppJsonFormatter(JsonFormatter):
     def add_fields(self, log_record, record, message_dict):
+        """Keep application logs focused on time, message, and event fields."""
         super().add_fields(log_record, record, message_dict)
 
         log_record["time"] = log_record.pop("asctime", None)
@@ -20,6 +21,7 @@ class AppJsonFormatter(JsonFormatter):
 
 
 def setup_logger(config: AppConfig) -> logging.Logger:
+    """Configure the application logger with JSON console and file handlers."""
     logger = logging.getLogger("ai_article_grabber")
     logger.setLevel(config.log_level.upper())
     logger.handlers.clear()

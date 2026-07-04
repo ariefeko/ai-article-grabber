@@ -4,6 +4,7 @@ from src.types import MediaItem
 
 
 def normalize_url(url: str) -> str:
+    """Normalize a URL by lowercasing host data and removing fragments."""
     parsed = urlparse(url.strip())
     parsed = parsed._replace(scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower())
     without_fragment = urldefrag(urlunparse(parsed)).url
@@ -11,19 +12,23 @@ def normalize_url(url: str) -> str:
 
 
 def absolute_url(base_url: str, maybe_relative_url: str) -> str:
+    """Resolve a possibly relative URL against a base URL."""
     return normalize_url(urljoin(base_url, maybe_relative_url.strip()))
 
 
 def get_domain(url: str) -> str:
+    """Return the lowercase network location for a URL."""
     return urlparse(url).netloc.lower()
 
 
 def is_valid_http_url(url: str) -> bool:
+    """Check whether a URL is an absolute HTTP or HTTPS URL."""
     parsed = urlparse(url.strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def dedupe_media_items(items: list[MediaItem]) -> list[MediaItem]:
+    """Remove duplicate media items by normalized URL."""
     seen: set[str] = set()
     deduped: list[MediaItem] = []
     for item in items:

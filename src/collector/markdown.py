@@ -4,18 +4,21 @@ from src.types import ExtractedArticle
 
 
 def escape_yaml_value(value: str | None) -> str:
+    """Escape a value so it can be safely written inside YAML quotes."""
     if value is None:
         return ""
     return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").strip()
 
 
 def html_link(url: str, label: str) -> str:
+    """Render a safe external HTML link for Markdown output."""
     safe_url = escape(url, quote=True)
     safe_label = escape(label or url)
     return f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_label}</a>'
 
 
 def html_image(url: str, alt: str) -> str:
+    """Render a linked HTML image for Markdown output."""
     safe_url = escape(url, quote=True)
     safe_alt = escape(alt or "Article image", quote=True)
     return (
@@ -26,11 +29,13 @@ def html_image(url: str, alt: str) -> str:
 
 
 def _render_media_section(title: str, lines: list[str], fallback: str) -> str:
+    """Render a Markdown media section with fallback text."""
     body = "\n\n".join(lines) if lines else fallback
     return f"## {title}\n\n{body}"
 
 
 def render_markdown(article: ExtractedArticle) -> str:
+    """Render an extracted article as Markdown with frontmatter and media."""
     images = [html_image(item.url, item.label) for item in article.images]
     links = [f"- {html_link(item.url, item.label)}" for item in article.links]
     videos = [f"- {html_link(item.url, item.label)}" for item in article.videos]

@@ -53,6 +53,7 @@ Question:
 
 
 def format_documents_for_context(documents: list) -> str:
+    """Format retrieved documents into prompt-ready context blocks."""
     blocks: list[str] = []
 
     for document in documents:
@@ -77,6 +78,7 @@ def invoke_with_model_fallback(
     config: AppConfig,
     logger,
 ) -> str:
+    """Invoke the configured model and fall back to local LLM when allowed."""
     try:
         llm = get_chat_llm(config)
         chain = prompt | llm | StrOutputParser()
@@ -101,6 +103,7 @@ def invoke_with_model_fallback(
 
 
 def _unique_sources(documents: list) -> list[str]:
+    """Return source URLs from documents while preserving first-seen order."""
     sources: list[str] = []
     seen: set[str] = set()
 
@@ -114,6 +117,7 @@ def _unique_sources(documents: list) -> list[str]:
 
 
 def _needs_fallback(answer: str, docs_count: int, min_docs: int) -> bool:
+    """Decide whether a local answer needs external fallback support."""
     return (
         docs_count < min_docs
         or INSUFFICIENT_ANSWER.lower() in answer.lower()
@@ -125,6 +129,7 @@ def ask_local_rag(
     config: AppConfig,
     logger,
 ) -> RAGAnswer:
+    """Answer a question using only locally indexed article documents."""
     docs = retrieve_documents(question, config, logger)
     sources = _unique_sources(docs)
 
@@ -156,20 +161,19 @@ def ask_with_fallback(
     logger,
     use_fallback: bool = False,
 ) -> RAGAnswer:
+    """Answer a question with optional Tavily fallback context."""
     local_answer = ask_local_rag(question, config, logger)
 
-    if not _needs_fallback(
-        local_answer.answer,
-        len(local_answer.sources),
-        config.rag_min_relevant_docs,
-    ):
-        return local_answer
-
     if not use_fallback:
-        logger.info(
-            "Fallback skipped",
-            extra={"event": "agent.fallback.skipped"},
-        )
+        if _needs_fallback(
+            local_answer.answer,
+            len(local_answer.sources),
+            config.rag_min_relevant_docs,
+        ):
+            logger.info(
+                "Fallback skipped",
+                extra={"event": "agent.fallback.skipped"},
+            )
         return local_answer
 
     tavily_results = search_tavily(question, config, logger)

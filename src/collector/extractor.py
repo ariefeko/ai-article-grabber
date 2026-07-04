@@ -20,6 +20,7 @@ def extract_article(
     candidate: CandidateArticle,
     ingested_at: str,
 ) -> ExtractedArticle:
+    """Extract structured article data and media from raw HTML."""
     try:
         soup = BeautifulSoup(html, "lxml")
         title = extract_title(soup, candidate)
@@ -45,6 +46,7 @@ def extract_article(
 
 
 def extract_title(soup: BeautifulSoup, candidate: CandidateArticle) -> str:
+    """Choose the best available article title from feed and page metadata."""
     if candidate.title.strip():
         return candidate.title.strip()
     meta_title = soup.select_one('meta[property="og:title"]')
@@ -60,6 +62,7 @@ def extract_title(soup: BeautifulSoup, candidate: CandidateArticle) -> str:
 
 
 def extract_published_at(soup: BeautifulSoup, candidate: CandidateArticle) -> str | None:
+    """Extract and normalize an article publication timestamp."""
     if candidate.published_at:
         return parse_article_date(candidate.published_at)
     selectors = [
@@ -78,12 +81,14 @@ def extract_published_at(soup: BeautifulSoup, candidate: CandidateArticle) -> st
 
 
 def _clean_soup(soup: BeautifulSoup) -> BeautifulSoup:
+    """Remove non-content elements from a BeautifulSoup document."""
     for tag in soup.select(",".join(REMOVABLE_SELECTORS)):
         tag.decompose()
     return soup
 
 
 def extract_content(html: str, soup: BeautifulSoup) -> str:
+    """Extract readable article text from HTML with fallback selectors."""
     try:
         summary_html = ReadabilityDocument(html).summary()
         summary_soup = _clean_soup(BeautifulSoup(summary_html, "lxml"))
@@ -104,11 +109,13 @@ def extract_content(html: str, soup: BeautifulSoup) -> str:
 
 
 def _image_url_from_srcset(srcset: str) -> str:
+    """Return the first image URL from an HTML srcset attribute."""
     first = srcset.split(",")[0].strip()
     return first.split(" ")[0]
 
 
 def extract_images(soup: BeautifulSoup, base_url: str) -> list[MediaItem]:
+    """Collect image URLs from image tags and social metadata."""
     items: list[MediaItem] = []
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src") or img.get("data-original")
@@ -130,6 +137,7 @@ def extract_images(soup: BeautifulSoup, base_url: str) -> list[MediaItem]:
 
 
 def extract_links(soup: BeautifulSoup, base_url: str) -> list[MediaItem]:
+    """Collect valid HTTP links from anchor tags."""
     items: list[MediaItem] = []
     for link in soup.find_all("a"):
         href = (link.get("href") or "").strip()
@@ -144,6 +152,7 @@ def extract_links(soup: BeautifulSoup, base_url: str) -> list[MediaItem]:
 
 
 def extract_videos(soup: BeautifulSoup, base_url: str) -> list[MediaItem]:
+    """Collect embedded video and media URLs from the article page."""
     items: list[MediaItem] = []
     selectors = ["iframe[src]", "video[src]", "video source[src]"]
     for selector in selectors:

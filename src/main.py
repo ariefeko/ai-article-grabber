@@ -21,6 +21,7 @@ from src.types import AppConfig
 
 
 def run_ingestion_pipeline(config: AppConfig, logger) -> tuple[int, int, int]:
+    """Collect, save, and index new AI articles."""
     ensure_directories(config)
     ingested_urls = read_ingested_urls(config.ingested_urls_file)
     candidates = collect_candidate_articles(RSS_FEEDS, KEYWORDS, logger)
@@ -116,6 +117,7 @@ def run_ingestion_pipeline(config: AppConfig, logger) -> tuple[int, int, int]:
 
 
 def main() -> None:
+    """Run the article ingestion pipeline as a script."""
     config = load_config()
     logger = setup_logger(config)
     logger.info("Application started", extra={"event": "app.start"})

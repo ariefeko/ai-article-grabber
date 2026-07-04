@@ -6,6 +6,7 @@ from src.exceptions import AppError
 
 
 def parse_frontmatter(markdown_text: str) -> dict:
+    """Parse simple YAML-style frontmatter from Markdown text."""
     if not markdown_text.startswith("---"):
         return {}
     parts = markdown_text.split("---", 2)
@@ -22,6 +23,7 @@ def parse_frontmatter(markdown_text: str) -> dict:
 
 
 def load_markdown_file(file_path: str) -> Document:
+    """Load a Markdown file into a LangChain document with metadata."""
     try:
         text = Path(file_path).read_text(encoding="utf-8")
     except OSError as error:
@@ -33,4 +35,5 @@ def load_markdown_file(file_path: str) -> Document:
 
 
 def load_markdown_documents(file_paths: list[str]) -> list[Document]:
+    """Load multiple Markdown files into LangChain documents."""
     return [load_markdown_file(file_path) for file_path in file_paths]

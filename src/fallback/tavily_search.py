@@ -4,6 +4,7 @@ from src.types import AppConfig, TavilySearchResult
 
 
 def is_tavily_enabled(config: AppConfig) -> bool:
+    """Return whether Tavily search is configured."""
     return bool(config.tavily_api_key)
 
 
@@ -12,6 +13,7 @@ def search_tavily(
     config: AppConfig,
     logger,
 ) -> list[TavilySearchResult]:
+    """Search Tavily and return normalized search results."""
     if not is_tavily_enabled(config):
         logger.warning("Tavily disabled", extra={"event": "tavily.search.disabled"})
         return []
@@ -52,6 +54,7 @@ def search_tavily(
 def format_tavily_results_for_context(
     results: list[TavilySearchResult],
 ) -> str:
+    """Format Tavily results as context for an LLM prompt."""
     return "\n\n".join(
         [
             "\n".join(

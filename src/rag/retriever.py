@@ -6,6 +6,7 @@ from src.types import AppConfig
 
 
 def get_retriever(config: AppConfig, logger):
+    """Create a configured retriever from the Qdrant vector store."""
     vectorstore = get_qdrant_vectorstore(config, logger)
     return vectorstore.as_retriever(search_kwargs={"k": config.rag_retriever_k})
 
@@ -15,6 +16,7 @@ def retrieve_documents(
     config: AppConfig,
     logger,
 ) -> list[Document]:
+    """Retrieve relevant article documents for a question."""
     logger.info("Retrieving documents", extra={"event": "rag.retrieve.start"})
     try:
         retriever = get_retriever(config, logger)
