@@ -1,6 +1,5 @@
 from langchain_ollama import OllamaEmbeddings
 from langchain_qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
 
 from src.exceptions import AppError
 from src.types import AppConfig
@@ -14,14 +13,13 @@ def get_qdrant_vectorstore(config: AppConfig, logger):
     logger.info("Connecting to Qdrant", extra={"event": "qdrant.connect.start"})
     try:
         embeddings = create_embeddings(config)
-        client = QdrantClient(
-            url=config.qdrant_url,
-            api_key=config.qdrant_api_key or None,
-        )
-        vectorstore = QdrantVectorStore(
-            client=client,
-            collection_name=config.qdrant_collection_name,
+        vectorstore = QdrantVectorStore.construct_instance(
             embedding=embeddings,
+            client_options={
+                "url": config.qdrant_url,
+                "api_key": config.qdrant_api_key or None,
+            },
+            collection_name=config.qdrant_collection_name,
         )
         logger.info("Connected to Qdrant", extra={"event": "qdrant.connect.done"})
         return vectorstore

@@ -1,18 +1,18 @@
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
-from langchain_ollama import ChatOllama
+import json
+import os
+import re
+from typing import Any
+
+from langchain.agents import create_agent
+from src.llm import get_chat_llm
 
 from src.config import load_config
 from src.logger import setup_logger
 from src.rag.tools import create_agent_tools
 
-AGENT_PROMPT = """You are an AI Article Research Agent.
+AGENT_SYSTEM_PROMPT = """You are an AI Article Research Agent.
 
-You have access to these tools:
-
-{tools}
-
-Use the tools when needed to answer questions about collected AI articles.
+Use the available tools when needed to answer questions about collected AI articles.
 
 Rules:
 - Prefer search_ai_articles for questions about AI trends, topics, companies, models, or article content.
@@ -23,20 +23,169 @@ Rules:
 - If the local knowledge base does not contain enough information and Tavily is unavailable, say so.
 - Always mention relevant source URLs when available.
 - Keep answers concise and practical.
-
-Use this format:
-
-Question: the input question
-Thought: think about what tool is needed
-Action: the action to take, must be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-Thought: I now know the final answer
-Final Answer: the final answer to the user
-
-Question: {input}
-Thought: {agent_scratchpad}
 """
+
+
+def extract_agent_output(result: dict[str, Any]) -> str:
+    messages = result.get("messages", [])
+    if not messages:
+        return str(result)
+
+    last_message = messages[-1]
+    content = getattr(last_message, "content", "")
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text", "")))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part).strip()
+
+    return str(content)
+
+
+def get_tool_map(tools: list[Any]) -> dict[str, Any]:
+    return {tool.name: tool for tool in tools}
+
+
+def parse_limit(question: str, default: int = 5) -> int:
+    match = re.search(r"\b(\d{1,2})\b", question)
+    if not match:
+        return default
+
+    limit = int(match.group(1))
+    return max(1, min(limit, 20))
+
+
+def invoke_tool(tool: Any, value: Any) -> str:
+    payloads = [
+        value,
+        str(value),
+        {"query": value},
+        {"question": value},
+        {"input": value},
+        {"limit": value},
+        {"__arg1": value},
+    ]
+
+    last_error: Exception | None = None
+
+    for payload in payloads:
+        try:
+            result = tool.invoke(payload)
+            return str(result)
+        except Exception as error:
+            last_error = error
+
+    raise RuntimeError(f"Tool invocation failed: {last_error}")
+
+
+def answer_with_local_router(question: str, tools: list[Any]) -> str:
+    tool_map = get_tool_map(tools)
+    normalized = question.lower()
+
+    if any(
+        keyword in normalized
+        for keyword in [
+            "list",
+            "artikel terakhir",
+            "artikel terbaru",
+            "recent articles",
+            "collected articles",
+            "dikumpulkan",
+        ]
+    ):
+        tool = tool_map.get("list_recent_articles")
+        if not tool:
+            return "Tool list_recent_articles is unavailable."
+
+        limit = parse_limit(question)
+        return invoke_tool(tool, limit)
+
+    if any(
+        keyword in normalized
+        for keyword in [
+            "source",
+            "sources",
+            "sumber",
+            "url",
+            "referensi",
+            "reference",
+        ]
+    ):
+        tool = tool_map.get("get_article_sources")
+        if not tool:
+            return "Tool get_article_sources is unavailable."
+
+        return invoke_tool(tool, question)
+
+    if any(
+        keyword in normalized
+        for keyword in [
+            "web terbaru",
+            "latest web",
+            "internet",
+            "tavily",
+        ]
+    ):
+        tool = tool_map.get("tavily_web_search")
+        if not tool:
+            return "Tavily fallback is unavailable."
+
+        return invoke_tool(tool, question)
+
+    tool = tool_map.get("search_ai_articles")
+    if not tool:
+        return "Tool search_ai_articles is unavailable."
+
+    return invoke_tool(tool, question)
+
+
+def execute_text_tool_call(answer: str, tools: list[Any]) -> str | None:
+    text = answer.strip()
+    marker = "<tool_call>"
+
+    if not text.startswith(marker):
+        return None
+
+    payload = text[len(marker):].strip()
+    match = re.match(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*(\{.*\})", payload, re.DOTALL)
+
+    if not match:
+        return None
+
+    tool_name = match.group(1)
+    raw_args = match.group(2)
+
+    try:
+        parsed_args = json.loads(raw_args)
+    except json.JSONDecodeError:
+        return None
+
+    arguments = parsed_args.get("arguments", parsed_args)
+
+    if isinstance(arguments, dict):
+        value = (
+            arguments.get("__arg1")
+            or arguments.get("query")
+            or arguments.get("question")
+            or arguments.get("input")
+            or arguments.get("limit")
+            or ""
+        )
+    else:
+        value = arguments
+
+    tool = get_tool_map(tools).get(tool_name)
+    if not tool:
+        return None
+
+    return invoke_tool(tool, value)
 
 
 def main() -> None:
@@ -44,29 +193,51 @@ def main() -> None:
     logger = setup_logger(config)
     logger.info("Agent started", extra={"event": "agent.start"})
 
-    llm = ChatOllama(model=config.ollama_chat_model)
+    provider = os.getenv("LLM_PROVIDER", "local").strip().lower()
     tools = create_agent_tools(config, logger)
-    prompt = PromptTemplate.from_template(AGENT_PROMPT)
-    agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
-    executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        verbose=False,
-        handle_parsing_errors=True,
-    )
+
+    agent = None
+    if provider in {"openai", "openagentic"}:
+        llm = get_chat_llm(config)
+        agent = create_agent(
+            model=llm,
+            tools=tools,
+            system_prompt=AGENT_SYSTEM_PROMPT,
+        )
 
     while True:
-        question = input("Ask: ").strip()
+        try:
+            question = input("Ask: ").strip()
+        except KeyboardInterrupt:
+            print("\nAgent stopped.")
+            break
+
         if question.lower() in {"exit", "quit", "q"}:
             break
         if not question:
             continue
 
         logger.info("Agent question", extra={"event": "agent.question"})
+
         try:
-            result = executor.invoke({"input": question})
-            print(result["output"])
+            if agent is not None:
+                result = agent.invoke(
+                    {"messages": [{"role": "user", "content": question}]}
+                )
+                answer = extract_agent_output(result)
+
+                tool_result = execute_text_tool_call(answer, tools)
+                if tool_result is not None:
+                    answer = tool_result
+            else:
+                answer = answer_with_local_router(question, tools)
+
+            print(answer)
             logger.info("Agent answer", extra={"event": "agent.answer"})
+
+        except KeyboardInterrupt:
+            print("\nAgent stopped.")
+            break
         except Exception as error:
             logger.error(
                 "Agent failed",

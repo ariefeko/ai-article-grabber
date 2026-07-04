@@ -22,3 +22,5 @@ tavily-python
 pytest
 pytest-asyncio
 httpx
+
+langchain-openai
