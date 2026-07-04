@@ -1,11 +1,12 @@
 import logging
+from pathlib import Path
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger.json import JsonFormatter
 
 from src.types import AppConfig
 
 
-class AppJsonFormatter(jsonlogger.JsonFormatter):
+class AppJsonFormatter(JsonFormatter):
     def add_fields(self, log_record, record, message_dict):
         super().add_fields(log_record, record, message_dict)
 
@@ -23,9 +24,17 @@ def setup_logger(config: AppConfig) -> logging.Logger:
     logger.setLevel(config.log_level.upper())
     logger.handlers.clear()
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(AppJsonFormatter("%(asctime)s %(message)s %(event)s"))
+    formatter = AppJsonFormatter("%(asctime)s %(message)s %(event)s")
 
-    logger.addHandler(handler)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    log_path = Path(config.log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
     logger.propagate = False
     return logger
