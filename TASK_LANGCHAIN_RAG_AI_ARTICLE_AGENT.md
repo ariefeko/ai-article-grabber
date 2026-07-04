@@ -31,6 +31,17 @@ The application must:
 13. Include test files.
 14. Avoid duplicate article ingestion and duplicate vector indexing.
 
+Current implementation status:
+
+```text
+- The base collector, Markdown renderer, Qdrant indexing, RAG chain, tools, CLI, and FastAPI routes exist.
+- Default chat model provider is local Ollama.
+- Optional OpenAI-compatible chat providers are available through src/llm.py.
+- Embeddings still use local Ollama embeddings.
+- Tavily is optional and must only run when fallback is explicitly allowed or web search is explicitly requested.
+- Runtime data in data/, logs/, and qdrant_storage/ is generated and should not be committed.
+```
+
 This project has four main layers:
 
 ```text
@@ -41,7 +52,7 @@ Layer 2: LangChain RAG
 Markdown → Loader → Splitter → Embedding → Qdrant → Retriever
 
 Layer 3: Agent + Fallback
-User Question → Local RAG → If insufficient → Tavily Search → Final Answer
+User Question → Local RAG → If fallback allowed and insufficient → Tavily Search → Final Answer
 
 Layer 4: FastAPI
 HTTP API → Ingest / Index / Ask / Articles / Sources
@@ -75,6 +86,7 @@ langchain-community
 langchain-text-splitters
 langchain-qdrant
 langchain-ollama
+langchain-openai
 qdrant-client
 
 Tavily
@@ -94,6 +106,16 @@ Default models:
 Embedding model: nomic-embed-text
 Chat model: llama3.1:8b
 ```
+
+Optional chat providers:
+
+```text
+LLM_PROVIDER=local        -> ChatOllama
+LLM_PROVIDER=openai       -> ChatOpenAI with OPENAI_API_KEY
+LLM_PROVIDER=openagentic  -> ChatOpenAI-compatible endpoint with OPENAGENTIC_* env vars
+```
+
+Embeddings remain local Ollama embeddings in the current implementation.
 
 Use Qdrant as vector database.
 
@@ -119,6 +141,7 @@ ai-article-grabber/
 │   ├── api.py
 │   ├── config.py
 │   ├── logger.py
+│   ├── llm.py
 │   ├── constants.py
 │   ├── types.py
 │   ├── exceptions.py
@@ -215,6 +238,7 @@ langchain-community
 langchain-text-splitters
 langchain-qdrant
 langchain-ollama
+langchain-openai
 qdrant-client
 
 tavily-python
@@ -278,6 +302,13 @@ LOG_LEVEL=INFO
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 OLLAMA_CHAT_MODEL=llama3.1:8b
 
+LLM_PROVIDER=local
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4
+OPENAGENTIC_API_KEY=
+OPENAGENTIC_MODEL=glm-5
+OPENAGENTIC_BASE_URL=https://aimurah.my.id/api/v1
+
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION_NAME=ai_articles
@@ -307,6 +338,7 @@ LOG_LEVEL=INFO
 
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 OLLAMA_CHAT_MODEL=llama3.1:8b
+LLM_PROVIDER=local
 
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION_NAME=ai_articles
@@ -326,6 +358,10 @@ Important:
 
 ```text
 TAVILY_API_KEY is optional for local-only mode.
+
+LLM_PROVIDER defaults to local.
+When LLM_PROVIDER=openai, OPENAI_API_KEY is required.
+When LLM_PROVIDER=openagentic, OPENAGENTIC_API_KEY is required.
 
 If TAVILY_API_KEY is empty:
 - Local RAG must still work.
@@ -539,9 +575,11 @@ Requirements:
 1. Use built-in `logging`.
 2. Use `python-json-logger`.
 3. Log to stdout.
-4. Cron script redirects stdout/stderr into `logs/ingest.log`.
-5. Log format must be structured JSON.
-6. Include these fields where relevant:
+4. Log to `config.log_file`.
+5. Create the log file parent directory automatically.
+6. Cron script also redirects stdout/stderr into `logs/ingest.log`.
+7. Log format must be structured JSON.
+8. Include these fields where relevant:
 
    * event
    * url
@@ -554,7 +592,22 @@ Implementation hint:
 
 ```python
 import logging
-from pythonjsonlogger import jsonlogger
+from pathlib import Path
+
+from pythonjsonlogger.json import JsonFormatter
+
+
+class AppJsonFormatter(JsonFormatter):
+    def add_fields(self, log_record, record, message_dict):
+        super().add_fields(log_record, record, message_dict)
+
+        log_record["time"] = log_record.pop("asctime", None)
+        log_record["message"] = record.getMessage()
+        log_record["event"] = getattr(record, "event", None)
+
+        for key in list(log_record.keys()):
+            if key not in {"time", "message", "event"}:
+                log_record.pop(key, None)
 
 
 def setup_logger(config):
@@ -562,16 +615,18 @@ def setup_logger(config):
     logger.setLevel(config.log_level.upper())
     logger.handlers.clear()
 
-    handler = logging.StreamHandler()
+    formatter = AppJsonFormatter("%(asctime)s %(message)s %(event)s")
 
-    formatter = jsonlogger.JsonFormatter(
-        "%(asctime)s %(levelname)s %(name)s %(message)s "
-        "%(event)s %(url)s %(count)s %(file_path)s "
-        "%(error_code)s %(error_message)s"
-    )
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
 
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    log_path = Path(config.log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
     logger.propagate = False
 
     return logger
@@ -1516,7 +1571,7 @@ Responsibilities:
 
 ```text
 - Check whether TAVILY_API_KEY exists.
-- Search Tavily when local RAG is insufficient.
+- Search Tavily only when fallback is explicitly allowed or external web search is explicitly requested.
 - Return title, URL, and content.
 - Never crash the app if Tavily fails.
 ```
@@ -1566,10 +1621,20 @@ search_tavily(query, config, logger):
 Fallback trigger rules:
 
 ```text
-Use Tavily fallback when:
+Use Tavily fallback only when fallback is allowed and at least one of these is true:
 1. Local retriever returns fewer than RAG_MIN_RELEVANT_DOCS documents.
 2. Local RAG answer says available article data is not enough.
 3. User explicitly asks for latest web information beyond local articles.
+
+FastAPI:
+- /ask receives use_fallback.
+- use_fallback=false means local-only.
+- use_fallback=true allows Tavily if local RAG is insufficient.
+
+CLI:
+- local provider uses a deterministic router.
+- openai/openagentic providers create a LangChain agent.
+- Tavily is used only when the user explicitly asks for web, internet, Tavily, or fallback.
 ```
 
 Important:
@@ -1681,7 +1746,7 @@ ask_local_rag(question, config, logger):
 
     context = format_documents_for_context(docs)
 
-    llm = ChatOllama(model=config.ollama_chat_model)
+    llm = get_chat_llm(config)
 
     answer = local chain invoke question + context
 
@@ -1691,10 +1756,14 @@ ask_local_rag(question, config, logger):
         sources=sources
     )
 
-ask_with_fallback(question, config, logger):
+ask_with_fallback(question, config, logger, use_fallback=False):
     local_answer = ask_local_rag(question, config, logger)
 
     if local_answer is enough:
+        return local_answer
+
+    if use_fallback is false:
+        log fallback skipped
         return local_answer
 
     tavily_results = search_tavily(question, config, logger)
@@ -1704,7 +1773,7 @@ ask_with_fallback(question, config, logger):
 
     fallback_context = format_tavily_results_for_context(tavily_results)
 
-    llm = ChatOllama(model=config.ollama_chat_model)
+    llm = get_chat_llm(config)
 
     fallback_answer = fallback chain invoke question + fallback_context
 
@@ -1744,6 +1813,9 @@ def get_article_sources_tool(config: AppConfig, logger):
 def tavily_web_search_tool(config: AppConfig, logger):
     ...
 
+def ingest_external_sources_tool(config: AppConfig, logger):
+    ...
+
 def create_agent_tools(config: AppConfig, logger) -> list:
     ...
 ```
@@ -1762,13 +1834,14 @@ Purpose:
 
 ```text
 Search local AI article knowledge base using RAG.
-Fallback to Tavily if local data is insufficient.
+Allow Tavily fallback only when the user explicitly asks for web, internet, Tavily, or fallback.
 ```
 
 Behavior:
 
 ```text
-Call ask_with_fallback(question, config, logger)
+Detect explicit fallback intent.
+Call ask_with_fallback(question, config, logger, use_fallback=detected_intent)
 ```
 
 ---
@@ -1823,6 +1896,27 @@ Behavior:
 ```text
 Call search_tavily(query, config, logger)
 Return source URLs and short snippets.
+```
+
+---
+
+## Tool 5: `ingest_external_sources`
+
+Purpose:
+
+```text
+Search external web sources using Tavily and save selected results as local Markdown files.
+Use only when the user explicitly asks to save external sources locally.
+```
+
+Behavior:
+
+```text
+Parse an optional small limit from the query.
+Search Tavily.
+Skip source URLs that already exist in local Markdown frontmatter.
+Save new Tavily results under OUTPUT_DIR/YYYY-MM-DD/.
+Return saved file paths and skipped URLs.
 ```
 
 ---
@@ -1929,22 +2023,31 @@ Responsibilities:
 - Load config.
 - Setup logger.
 - Create LangChain tools.
-- Create Agent.
+- Create LangChain Agent when LLM_PROVIDER is openai or openagentic.
+- Use deterministic local tool router when LLM_PROVIDER is local.
 - Accept user questions from terminal.
 - Use local RAG first.
-- Use Tavily fallback when needed.
+- Use Tavily fallback only when explicitly requested by the user.
 - Let user exit with:
   - exit
   - quit
   - q
 ```
 
-Use LangChain Agent:
+Current LLM provider behavior:
 
-```python
-from langchain_ollama import ChatOllama
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
+```text
+LLM_PROVIDER=local:
+- Do not create a LangChain chat agent.
+- Route common intents directly to tools.
+
+LLM_PROVIDER=openai:
+- Create LangChain agent with ChatOpenAI.
+- Require OPENAI_API_KEY.
+
+LLM_PROVIDER=openagentic:
+- Create LangChain agent with ChatOpenAI-compatible base_url.
+- Require OPENAGENTIC_API_KEY.
 ```
 
 Agent prompt:
@@ -1952,34 +2055,17 @@ Agent prompt:
 ```text
 You are an AI Article Research Agent.
 
-You have access to these tools:
-
-{tools}
-
-Use the tools when needed to answer questions about collected AI articles.
+Use the available tools when needed to answer questions about collected AI articles.
 
 Rules:
 - Prefer search_ai_articles for questions about AI trends, topics, companies, models, or article content.
 - Use list_recent_articles when the user asks what articles were collected.
 - Use get_article_sources when the user asks for sources or references.
-- Use tavily_web_search only when the user explicitly asks for latest web info or local data is insufficient.
+- Use tavily_web_search only when the user explicitly asks for latest web info.
 - Do not invent facts.
 - If the local knowledge base does not contain enough information and Tavily is unavailable, say so.
 - Always mention relevant source URLs when available.
 - Keep answers concise and practical.
-
-Use this format:
-
-Question: the input question
-Thought: think about what tool is needed
-Action: the action to take, must be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-Thought: I now know the final answer
-Final Answer: the final answer to the user
-
-Question: {input}
-Thought: {agent_scratchpad}
 ```
 
 Pseudocode:
@@ -1991,24 +2077,14 @@ main():
 
     logger.info event agent.start
 
-    llm = ChatOllama(model=config.ollama_chat_model)
-
     tools = create_agent_tools(config, logger)
+    provider = LLM_PROVIDER default local
 
-    prompt = PromptTemplate.from_template(AGENT_PROMPT)
-
-    agent = create_react_agent(
-        llm=llm,
-        tools=tools,
-        prompt=prompt
-    )
-
-    executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        verbose=False,
-        handle_parsing_errors=True
-    )
+    if provider is openai or openagentic:
+        llm = get_chat_llm(config)
+        agent = create_agent(model=llm, tools=tools, system_prompt=AGENT_SYSTEM_PROMPT)
+    else:
+        agent = None
 
     while True:
         question = input("Ask: ")
@@ -2019,8 +2095,16 @@ main():
         logger.info event agent.question
 
         try:
-            result = executor.invoke({"input": question})
-            print(result["output"])
+            if agent exists:
+                result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+                answer = extract_agent_output(result)
+                tool_result = execute_text_tool_call(answer, tools)
+                if tool_result is not None:
+                    answer = tool_result
+            else:
+                answer = answer_with_local_router(question, tools)
+
+            print(answer)
             logger.info event agent.answer
 
         except Exception as error:
@@ -2048,7 +2132,7 @@ Responsibilities:
 - Expose health check.
 - Trigger ingestion.
 - Trigger indexing.
-- Ask questions via RAG Agent.
+- Ask questions via local RAG chain with optional Tavily fallback.
 - List recent Markdown articles.
 - Get relevant source URLs.
 ```
@@ -2186,9 +2270,9 @@ Response:
 Purpose:
 
 ```text
-Ask the RAG Agent a question.
+Ask the local RAG chain a question.
 Use local Qdrant RAG first.
-Use Tavily fallback if needed and enabled.
+Use Tavily fallback only when use_fallback=true and local RAG is insufficient.
 ```
 
 Request:
@@ -2935,11 +3019,11 @@ Retriever
    ↓
 Local RAG Answer
    ↓
-If Local Data Insufficient
+If Fallback Allowed and Local Data Is Insufficient
    ↓
 Tavily Search Fallback
    ↓
-Final Agent Answer
+Final Answer
    ↓
 FastAPI / CLI
 ```
@@ -2999,11 +3083,14 @@ The task is complete when:
 - Link output uses raw HTML with target="_blank".
 - Video output uses raw HTML with target="_blank".
 - Logs are structured JSON using Python logging + python-json-logger.
+- Logs are written to stdout and LOG_FILE.
+- LOG_FILE parent directory is created automatically.
 - LangChain is used for document loading, splitting, embeddings, Qdrant vector store, retriever, RAG chain, and Agent tools.
 - Qdrant is used instead of Chroma.
 - Tavily fallback works when TAVILY_API_KEY is configured.
 - Tavily fallback is disabled gracefully when TAVILY_API_KEY is missing.
 - Tests exist and pass using pytest.
+- Logger tests verify LOG_FILE output.
 - Unit tests do not require internet, Ollama, Qdrant, or Tavily.
 - Cron is documented to run every day at 12:00 noon.
 ```
