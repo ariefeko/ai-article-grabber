@@ -86,7 +86,12 @@ def ask(request: AskRequest):
     logger.info("API ask request", extra={"event": "api.request"})
     try:
         result = (
-            ask_with_fallback(request.question, config, logger)
+            ask_with_fallback(
+                request.question,
+                config,
+                logger,
+                use_fallback=request.use_fallback,
+            )
             if request.use_fallback
             else ask_local_rag(request.question, config, logger)
         )
