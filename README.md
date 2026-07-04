@@ -2,14 +2,14 @@
 
 Daily AI article collector and research agent built with Python, LangChain, Qdrant, Tavily fallback, and FastAPI.
 
-The app collects up to 5 latest AI-related RSS articles, saves each article as Markdown, indexes Markdown into Qdrant, and answers questions from local RAG first. Tavily can be used as optional web fallback when local data is insufficient.
+The app collects up to 5 latest AI-related RSS articles, saves each article as Markdown, indexes Markdown into Qdrant, and answers questions from local RAG first. Tavily is optional and only used when fallback is explicitly allowed and local article data is insufficient.
 
 ## Tech Stack
 
 - Python 3.11+
 - FastAPI and Uvicorn
 - feedparser, requests, BeautifulSoup, readability-lxml
-- LangChain, langchain-qdrant, langchain-ollama
+- LangChain, langchain-qdrant, langchain-ollama, langchain-openai
 - Qdrant
 - Tavily
 - python-json-logger
@@ -19,43 +19,39 @@ The app collects up to 5 latest AI-related RSS articles, saves each article as M
 
 ```text
 Daily Cron at 12:00
-   ↓
-RSS Feed
-   ↓
-Latest 5 AI Articles
-   ↓
+   |
+RSS Feeds
+   |
+Latest AI-related Candidate Articles
+   |
 Fetch Article Page
-   ↓
+   |
 Extract Title / Content / Metadata
-   ↓
-Extract Images as URLs
-   ↓
-Extract Links as URLs
-   ↓
-Extract Videos as URLs
-   ↓
+   |
+Extract Images / Links / Videos as URLs
+   |
 Render Markdown
-   ↓
+   |
 Save to data/articles/YYYY-MM-DD/
-   ↓
+   |
 LangChain Markdown Loader
-   ↓
+   |
 Text Splitter
-   ↓
+   |
 Ollama Embeddings
-   ↓
+   |
 Qdrant Vector DB
-   ↓
+   |
 Retriever
-   ↓
+   |
 Local RAG Answer
-   ↓
-If Local Data Insufficient
-   ↓
+   |
+If Fallback Allowed and Local Data Is Insufficient
+   |
 Tavily Search Fallback
-   ↓
-Final Agent Answer
-   ↓
+   |
+Final Answer
+   |
 FastAPI / CLI
 ```
 
@@ -93,13 +89,36 @@ Default collection:
 ai_articles
 ```
 
+## Configuration
+
+The default setup uses local Ollama:
+
+```env
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+OLLAMA_CHAT_MODEL=llama3.1:8b
+```
+
+The chat model provider can also be switched through environment variables:
+
+```env
+LLM_PROVIDER=local
+```
+
+Supported values:
+
+- `local`: uses `ChatOllama` with `OLLAMA_CHAT_MODEL`.
+- `openai`: uses `ChatOpenAI` with `OPENAI_API_KEY` and `OPENAI_MODEL`.
+- `openagentic`: uses an OpenAI-compatible endpoint with `OPENAGENTIC_API_KEY`, `OPENAGENTIC_MODEL`, and `OPENAGENTIC_BASE_URL`.
+
+Embeddings remain local Ollama embeddings in the current implementation.
+
 ## Run Ingestion
 
 ```bash
 python -m src.main
 ```
 
-This collects RSS articles, saves Markdown files into `data/articles/YYYY-MM-DD/`, and indexes unindexed Markdown files into Qdrant.
+This collects RSS articles, saves Markdown files into `data/articles/YYYY-MM-DD/`, and indexes new Markdown files into Qdrant.
 
 Duplicate protection:
 
@@ -119,10 +138,17 @@ Apa tren AI terbaru dari artikel yang dikumpulkan?
 Artikel terbaru membahas OpenAI apa?
 List 5 artikel terakhir.
 Berikan source URL tentang AI agent.
-Ringkas insight utama dari artikel hari ini.
+Cari internet berita terbaru tentang AI agent.
 ```
 
 Exit with `exit`, `quit`, or `q`.
+
+CLI behavior:
+
+- With `LLM_PROVIDER=local`, the CLI uses a deterministic router over local tools.
+- With `LLM_PROVIDER=openai` or `openagentic`, the CLI creates a LangChain agent with the same tool set.
+- Tavily is used only when the question explicitly asks for web or internet fallback.
+- External Tavily results can be saved as Markdown through the `ingest_external_sources` tool when the agent is explicitly asked to save external sources locally.
 
 ## FastAPI
 
@@ -145,6 +171,17 @@ Endpoints:
 - `GET /articles/recent?limit=5`
 - `GET /sources?query=ai%20agent`
 
+Example ask request:
+
+```json
+{
+  "question": "Apa insight utama dari artikel AI yang dikumpulkan?",
+  "use_fallback": true
+}
+```
+
+`use_fallback=true` allows Tavily only when local RAG data is insufficient. `use_fallback=false` keeps the answer local-only.
+
 ## Tavily Fallback
 
 `TAVILY_API_KEY` is optional.
@@ -155,11 +192,15 @@ If it is empty:
 - Tavily fallback is disabled gracefully.
 - The app does not crash.
 
-When configured, Tavily is used if local retriever data is insufficient, the local answer says the data is not enough, or the user asks for latest web information.
+When configured, Tavily can be used by:
+
+- FastAPI `/ask` when `use_fallback=true` and local RAG is insufficient.
+- Agent CLI when the user explicitly asks for web or internet information.
+- Agent tool `ingest_external_sources` when the user explicitly asks to save external sources locally.
 
 ## Markdown Output
 
-Markdown files include YAML frontmatter, source URL, published date when available, ingested date, content, images, links, and videos as URLs.
+Markdown files include YAML frontmatter, source URL, source domain, published date when available, ingested date, content, images, links, and videos as URLs.
 
 Links and images use raw HTML so supported Markdown renderers can open URLs in a new tab:
 
@@ -213,8 +254,9 @@ Unit tests mock internet, Ollama, Qdrant, and Tavily dependencies.
 
 - Article extraction quality depends on publisher HTML structure.
 - RSS feeds may rate-limit or block requests.
-- Local RAG quality depends on collected article volume and Ollama model behavior.
-- Qdrant and Ollama must be running for real indexing and answering.
+- Local RAG quality depends on collected article volume and chat model behavior.
+- Qdrant and Ollama must be running for real indexing and local answering.
+- OpenAI-compatible chat providers do not replace the Ollama embedding model.
 
 ## Future Improvements
 
