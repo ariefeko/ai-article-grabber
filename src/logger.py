@@ -7,6 +7,7 @@ from src.types import AppConfig
 
 
 class AppJsonFormatter(JsonFormatter):
+    """JSON formatter that emits the compact application log schema."""
     def add_fields(self, log_record, record, message_dict):
         """Keep application logs focused on time, message, and event fields."""
         super().add_fields(log_record, record, message_dict)

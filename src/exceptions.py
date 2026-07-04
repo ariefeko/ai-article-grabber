@@ -1,4 +1,5 @@
 class AppError(Exception):
+    """Application exception with a machine-readable error code."""
     def __init__(
         self,
         code: str,

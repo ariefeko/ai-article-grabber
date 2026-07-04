@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 @dataclass
 class AppConfig:
+    """Application settings loaded from environment variables."""
     max_articles: int
     output_dir: str
     ingested_urls_file: str
@@ -36,6 +37,7 @@ class AppConfig:
 
 @dataclass
 class CandidateArticle:
+    """Article candidate discovered from an RSS feed."""
     title: str
     url: str
     source_feed_url: str
@@ -45,12 +47,14 @@ class CandidateArticle:
 
 @dataclass
 class MediaItem:
+    """Media URL and human-readable label extracted from an article."""
     url: str
     label: str
 
 
 @dataclass
 class ExtractedArticle:
+    """Structured article content and metadata extracted from a web page."""
     title: str
     source_url: str
     source_domain: str
@@ -64,6 +68,7 @@ class ExtractedArticle:
 
 @dataclass
 class MarkdownArticleMetadata:
+    """Metadata stored with a saved Markdown article."""
     file_path: str
     title: str
     source_url: str
@@ -74,6 +79,7 @@ class MarkdownArticleMetadata:
 
 @dataclass
 class RAGAnswer:
+    """Answer payload returned by the RAG pipeline."""
     answer: str
     used_fallback: bool
     sources: list[str] = field(default_factory=list)
@@ -81,17 +87,20 @@ class RAGAnswer:
 
 @dataclass
 class TavilySearchResult:
+    """Normalized search result returned by Tavily."""
     title: str
     url: str
     content: str
 
 
 class AskRequest(BaseModel):
+    """Request body for asking the article agent a question."""
     question: str = Field(..., min_length=1)
     use_fallback: bool = False
 
 
 class AskResponse(BaseModel):
+    """Response body returned by the article agent."""
     question: str
     answer: str
     sources: list[str] = []
