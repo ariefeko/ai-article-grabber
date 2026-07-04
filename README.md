@@ -220,11 +220,16 @@ Images:
 
 Logs use structured JSON through Python logging and `python-json-logger`.
 
-Cron redirects stdout/stderr to:
+`setup_logger()` writes to both:
+
+- stdout/stderr, useful for local CLI and server logs.
+- `LOG_FILE`, which defaults to:
 
 ```text
 logs/ingest.log
 ```
+
+The logger creates the log directory automatically when needed. The cron script also appends stdout/stderr to `logs/ingest.log`, so scheduled runs still keep command-level output in the same place.
 
 ## Cron
 
@@ -245,10 +250,16 @@ Because 12:00 WIB equals 05:00 UTC.
 ## Tests
 
 ```bash
-pytest
+.venv/bin/pytest
 ```
 
-Unit tests mock internet, Ollama, Qdrant, and Tavily dependencies.
+Current suite:
+
+```text
+37 passed
+```
+
+Unit tests mock internet, Ollama, Qdrant, Tavily, and file logging dependencies.
 
 ## Known Limitations
 
