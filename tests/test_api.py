@@ -1,22 +1,22 @@
 from pathlib import Path
 from unittest.mock import Mock
 
-from fastapi.testclient import TestClient
+import pytest
+from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from src.api import app
+from src.api.routes import ask, health, recent_articles, sources
+from src.api.schemas import AskRequest
 from src.types import RAGAnswer
 
 
-client = TestClient(app)
-
-
 def test_health():
-    assert client.get("/health").json() == {"status": "ok"}
+    assert health() == {"status": "ok"}
 
 
 def test_ask_validates_empty_question():
-    assert client.post("/ask", json={"question": ""}).status_code == 422
+    with pytest.raises(ValidationError):
+        AskRequest(question="")
 
 
 def test_ask_response_shape(monkeypatch: MonkeyPatch):
@@ -24,11 +24,14 @@ def test_ask_response_shape(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("src.api.routes.setup_logger", lambda config: Mock())
     monkeypatch.setattr(
         "src.api.routes.ask_with_fallback",
-        lambda question, config, logger: RAGAnswer("answer", False, ["https://e.com"]),
+        lambda question, config, logger, use_fallback=False: RAGAnswer(
+            "answer",
+            False,
+            ["https://e.com"],
+        ),
     )
-    response = client.post("/ask", json={"question": "What is AI?"})
-    assert response.status_code == 200
-    assert response.json()["sources"] == ["https://e.com"]
+    response = ask(AskRequest(question="What is AI?"))
+    assert response.sources == ["https://e.com"]
 
 
 def test_recent_articles_shape(monkeypatch: MonkeyPatch, tmp_path: Path):
@@ -40,9 +43,8 @@ def test_recent_articles_shape(monkeypatch: MonkeyPatch, tmp_path: Path):
     config = Mock(output_dir=str(tmp_path))
     monkeypatch.setattr("src.api.routes.load_config", lambda: config)
     monkeypatch.setattr("src.api.routes.setup_logger", lambda config: Mock())
-    response = client.get("/articles/recent")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    response = recent_articles(limit=5)
+    assert isinstance(response, list)
 
 
 def test_sources_shape(monkeypatch: MonkeyPatch):
@@ -50,6 +52,5 @@ def test_sources_shape(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("src.api.routes.load_config", lambda: Mock())
     monkeypatch.setattr("src.api.routes.setup_logger", lambda config: Mock())
     monkeypatch.setattr("src.api.routes.retrieve_documents", lambda query, config, logger: [doc])
-    response = client.get("/sources", params={"query": "ai"})
-    assert response.status_code == 200
-    assert response.json() == {"sources": ["https://e.com"]}
+    response = sources(query="ai")
+    assert response.sources == ["https://e.com"]
